@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Galería FPS</title>
+
+<script type="importmap">
+{
+  "imports": {
+    "three":               "./build/three.module.min.js",
+    "three/addons/":       "./examples/jsm/",
+    "three/examples/jsm/": "./examples/jsm/"
+  }
+}
+</script>
+
+<style>
+  /* ── Reset ─────────────────────────────────────────────────── */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+  #canvas { display: block; width: 100vw; height: 100vh; }
+
+  /* ── Crosshair ─────────────────────────────────────────────── */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  #crosshair {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 16px; height: 16px;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute;
+    background: rgba(82, 67, 67, 0.8); border-radius: 1px;
+  }
+  #crosshair::before { width: 1.5px; height: 16px; top: 0; left: 7px; }
+  #crosshair::after  { width: 16px; height: 1.5px; top: 7px; left: 0; }
+
+  /* ── Overlay principal ─────────────────────────────────────── */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.6s ease;
+  }
+  #overlay.fade-out {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* ── Contenedor central ────────────────────────────────────── */
+  #overlay-box {
+    width: min(680px, 92vw);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 36px;
+  }
+
+  /* ── Encabezado ────────────────────────────────────────────── */
+  #overlay-header {
+    text-align: center;
+    width: 100%;
+  }
+  #overlay-pretitle {
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 14px;
+  }
+  #overlay-title {
+    font-size: clamp(26px, 5vw, 44px);
+    font-weight: 300;
+    letter-spacing: 2px;
+    color: #e8e8e8;
+    line-height: 1.2;
+    margin-bottom: 10px;
+  }
+  #overlay-subtitle {
+    font-size: 13px;
+    color: #555;
+    letter-spacing: 2px;
+  }
+
+  /* ── Línea divisora ────────────────────────────────────────── */
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #333, transparent);
+  }
+
+  /* ── Widget de carga ───────────────────────────────────────── */
+  #loader-wrap {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  #bar-track {
+    width: 100%;
+    height: 2px;
+    background: #111;
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+  #bar-track::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+    animation: shimmer 1.8s infinite;
+  }
+  @keyframes shimmer {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  #bar-fill {
+    height: 100%;
+    width: 0%;
+    background: #e8e8e8;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    position: relative;
+    z-index: 1;
+  }
+  #bar-label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #444;
+  }
+
+  /* ── Información de la exposición ─────────────────────────── */
+  #overlay-desc {
+    display: none;
+    width: 100%;
+    max-height: 38vh;
+    overflow-y: auto;
+    padding-right: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: #333 transparent;
+  }
+  #overlay-desc::-webkit-scrollbar { width: 4px; }
+  #overlay-desc::-webkit-scrollbar-track { background: transparent; }
+  #overlay-desc::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+  .desc-section { margin-bottom: 28px; }
+  .desc-section:last-child { margin-bottom: 0; }
+
+  .desc-label {
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #444;
+    margin-bottom: 8px;
+  }
+  .desc-text {
+    font-size: 13px;
+    line-height: 1.8;
+    color: #888;
+    font-family: Georgia, serif;
+  }
+  .desc-text strong { color: #bbb; font-weight: normal; }
+
+  .artist-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .artist-list li {
+    font-size: 12px;
+    color: #777;
+    letter-spacing: 1px;
+    padding-left: 14px;
+    position: relative;
+  }
+  .artist-list li::before {
+    content: '—';
+    position: absolute;
+    left: 0;
+    color: #444;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .meta-key {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #444;
+    margin-bottom: 4px;
+  }
+  .meta-value {
+    font-size: 12px;
+    color: #777;
+  }
+
+  /* ── Botón iniciar ─────────────────────────────────────────── */
+  #start-btn {
+    display: none;
+    width: 100%;
+    padding: 16px;
+    background: transparent;
+    border: 1px solid #333;
+    color: #888;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.3s, color 0.3s, background 0.3s;
+  }
+  #start-btn:hover {
+    border-color: #888;
+    color: #e8e8e8;
+    background: rgba(255,255,255,0.03);
+  }
+  #start-btn:active { background: rgba(255,255,255,0.06); }
+
+  /* ── Pie del overlay ───────────────────────────────────────── */
+  #overlay-footer {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: #2a2a2a;
+    text-align: center;
+  }
+
+  /* ── Widget de entrada (aparece al presionar el botón) ──────── */
+  #entering-widget {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+  }
+  #entering-dots {
+    display: flex;
+    gap: 8px;
+  }
+  #entering-dots span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #444;
+    animation: dot-pulse 1.2s infinite ease-in-out;
+  }
+  #entering-dots span:nth-child(2) { animation-delay: 0.2s; }
+  #entering-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot-pulse {
+    0%, 80%, 100% { background: #333; transform: scale(0.8); }
+    40%            { background: #aaa; transform: scale(1.2); }
+  }
+  #entering-label {
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #444;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <div id="crosshair"></div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════
+     OVERLAY DE CARGA
+     ════════════════════════════════════════════════════════════ -->
+<div id="overlay">
+  <div id="overlay-box">
+
+    <!-- ── Encabezado ── -->
+    <div id="overlay-header">
+      <div id="overlay-pretitle">Exposición Virtual · 2026</div>
+      <h1 id="overlay-title">EXPLORANDO el LIMITE</h1>
+      <div id="overlay-subtitle">Bellas Artes · Medellín, Colombia</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ── Barra de carga ── -->
+    <div id="loader-wrap">
+      <div id="bar-track">
+        <div id="bar-fill"></div>
+      </div>
+      <div id="bar-label">Iniciando</div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════
+         INFORMACIÓN DE LA EXPOSICIÓN
+         Se muestra al terminar la carga. Reemplazar con
+         el contenido real de la exposición.
+         ══════════════════════════════════════════════════════ -->
+    <div id="overlay-desc">
+
+<div class="desc-section">
+  <div class="desc-label">Sobre la exposición</div>
+  <p class="desc-text">
+    <strong>Explorando el Límite V</strong> — Exposición de Fotografía.
+  </p>
+  <br>
+  <p class="desc-text">
+    La fotografía ha sido, desde su origen, un arte del umbral. Opera en el instante en que la luz toca la superficie sensible, en el borde entre lo visible y lo invisible, entre lo que ocurre y lo que se recuerda. Explorando el Límite recoge esa condición esencial del medio y la convierte en pregunta: ¿hasta dónde puede llegar la imagen fotográfica cuando se ejerce desde la conciencia, la investigación y la voluntad expresiva?
+  </p>
+  <br>
+  <p class="desc-text">
+    Esta quinta edición reúne el trabajo de siete fotógrafos en formación cuyas propuestas, diversas en tema y lenguaje, comparten una misma actitud: la de quien no acepta la fotografía como simple registro del mundo, sino como territorio de exploración y pensamiento. Aquí el cuerpo se convierte en cartografía de la intimidad y el deseo; el paisaje natural se carga con la densidad de la vida interior; la ciudad revela sus tensiones silenciosas; la moda se interroga como sistema de identidad y visibilidad; la abuela campesina se vuelve archivo vivo de memoria y arraigo; el vínculo afectivo con los animales se examina como forma genuina de relación; y la emoción, llevada al límite de lo sensorial, se materializa en objetos que la hacen visible.
+  </p>
+  <br>
+  <p class="desc-text">
+    Ninguno de estos trabajos es neutral. Todos implican una postura — ética, estética, afectiva — frente al acto de fotografiar. Y es precisamente esa implicación la que define el espíritu de Explorando el Límite: una exposición que no exhibe resultados sino procesos, no certezas sino preguntas abiertas.
+  </p>
+  <br>
+  <p class="desc-text">
+    La fotografía, entendida así, deja de ser un medio para convertirse en un método. Un modo de conocer, de sentir y de decir lo que de otro modo permanecería sin forma.
+  </p>
+</div>
+
+      <!-- Artistas -->
+      <div class="desc-section">
+        <div class="desc-label">Fotógrafos</div>
+        <ul class="artist-list">
+          <li>MARÍA CAMILA BETANCUR PALACIO</li>
+          <li>PAULA ANDREA MORALES VANEGAS</li>
+          <li>ESTEFANÍA ARANGO CASTRO</li>
+          <li>EMERSON DANIEL PASTÁS ERIRA</li>
+          <li>JUAN ESTEBAN REY PIEDRAHITA</li>
+          <li>SANTIAGO ESCOBAR BEJARANO</li>
+          <li>DANIEL MATEO CORREA DUARTE</li>
+        </ul>
+      </div>
+
+<div class="desc-section">
+  <div class="desc-label"> Dirección y asesoría de proyectos:</div>
+  <p class="desc-text">
+    <strong>Explorando el Límite V</strong>
+  </p>
+  <br>
+  <p class="desc-text">
+    <strong>Julián Fernando León Durango Gómez</strong> — Decano, Facultad de Artes Integradas.
+  </p>
+  <br>
+  <p class="desc-text">
+    <strong>Folkert Van Dunné</strong> — Curso Foto-Autor.
+  </p>
+  <br>
+  <p class="desc-text">
+    <strong>Wolfgang G. Tirado</strong> — Curso Foto-Arte.
+  </p>
+  <br>
+    <p class="desc-text">
+    <strong>Enrique Aguirre</strong> — Curso Investigación-Creación.
+  </p>
+  <br>
+      <p class="desc-text">
+    <strong>Montaje e implementación digital: Wolfgang G. Tirado</strong>
+  </p>
+  <br>
+</div>
+
+      <!-- Metadatos -->
+      <div class="desc-section">
+        <div class="meta-grid">
+          <div>
+            <div class="meta-key">MAYO</div>
+            <div class="meta-value">2026</div>
+          </div>
+          <div>
+            <div class="meta-key">Comunicaciones</div>
+            <div class="meta-value">Carlos Vélez</div>
+          </div>
+          <div>
+            <div class="meta-key">Curaduría</div>
+            <div class="meta-value">Folkert Van Dunne - Enrique Aguirre - Wolfgang G. Tirado</div>
+          </div>
+          <div>
+            <div class="meta-key">Ciudad</div>
+            <div class="meta-value">Medellín, Colombia</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /overlay-desc -->
+
+    <!-- ── Botón iniciar ── -->
+    <button id="start-btn">Iniciar recorrido</button>
+
+    <!-- ── Widget de entrada (oculto hasta presionar el botón) ── -->
+    <div id="entering-widget">
+      <div id="entering-dots">
+        <span></span><span></span><span></span>
+      </div>
+      <div id="entering-label">Entrando</div>
+    </div>
+
+    <!-- ── Instrucciones de navegación ── -->
+    <div id="overlay-footer">
+      W A S D · mover &nbsp;·&nbsp; Mouse · mirar &nbsp;·&nbsp; R · volver al inicio
+    </div>
+
+  </div>
+</div><!-- /overlay -->
+
+<script>
+  // Mostrar widget de entrada al presionar el botón
+  // El main.js maneja el fade-out del overlay completo
+  document.getElementById('start-btn').addEventListener('click', () => {
+    document.getElementById('start-btn').style.display       = 'none';
+    document.getElementById('overlay-footer').style.display  = 'none';
+    document.getElementById('overlay-desc').style.display    = 'none';
+    document.getElementById('entering-widget').style.display = 'flex';
+  }, { once: true });
+</script>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>

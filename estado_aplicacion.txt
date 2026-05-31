@@ -1,0 +1,548 @@
+================================================================
+  GALERÍA FPS — Three.js r182
+  Estado actual de la aplicación + Costo de GPU por componente
+  Fecha: 30 de marzo de 2026
+================================================================
+
+ESCALA DE COSTO GPU USADA EN ESTE DOCUMENTO:
+  [*****]  MUY ALTO  — impacto severo, reducir si hay problemas
+  [****-]  ALTO      — consume recursos significativos por frame
+  [***--]  MEDIO     — costo notable pero manejable
+  [**---]  BAJO      — impacto pequeño, raramente causa problemas
+  [*----]  MÍNIMO    — prácticamente sin costo measurable
+  [-----]  CERO      — no tiene costo en el loop de render
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ESTRUCTURA DE CARPETAS Y ARCHIVOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  GALERIA_CONCIERTO/
+  ├── index.html
+  ├── main.js
+  ├── build/
+  │   └── three.module.min.js
+  ├── examples/jsm/          (addons de Three.js)
+  └── assets/
+      ├── GALERIA.glb         ← modelo principal (carga automática)
+      ├── LUCES.glb           ← luces (carga automática)
+      ├── VIDRIOS.glb         ← vidrios (carga automática si existe)
+      ├── fondo/
+      │   ├── fondo.json      ← manifiesto de fondos disponibles
+      │   ├── Campo.exr       ← fondo panorámico (u otros archivos)
+      │   └── (otros .jpg, .png, .exr)
+      └── fuentes/
+          └── (archivos .ttf o .otf para la tipografía del panel)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ARCHIVOS QUE COMPONEN LA APLICACIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  index.html
+    Punto de entrada. Define el canvas, el crosshair y el
+    overlay. Carga main.js como módulo ES6. Define el importmap
+    que resuelve las rutas de Three.js.
+    COSTO GPU: [-----] CERO — solo HTML/CSS estático.
+
+  main.js
+    Toda la lógica de la aplicación (~1500 líneas). Contiene
+    el bloque UI_CONFIG, el renderer, la escena, la física,
+    el sistema de partículas, las colisiones, el panel de
+    control y el sistema de guardado.
+    COSTO GPU: (ver cada componente abajo)
+
+  assets/GALERIA.glb
+    Modelo 3D de la galería (~200x200 unidades).
+    COSTO GPU: [***--] MEDIO — geometría estática subida a VRAM
+    una sola vez. El costo por frame depende del número de
+    triángulos visibles en cámara y del pixelRatio activo.
+
+  assets/LUCES.glb
+    Luces de la escena. Se carga automáticamente al inicio.
+    Al cargar se leen los nombres directamente del GLB y se
+    aplican valores fijos: intensidad 150, distancia 100,
+    castShadow false. No hay arrays de calibración en el código.
+    COSTO GPU: [**---] BAJO sin sombras / [*****] MUY ALTO con
+    sombras. Cada luz con castShadow=true genera un render
+    adicional de toda la escena. Actualmente todas en false.
+
+  assets/VIDRIOS.glb
+    Mallas de vidrio. Se carga automáticamente al inicio si
+    el archivo existe. Si no existe, no carga nada y el usuario
+    puede cargarlo manualmente desde el panel.
+    Valores por defecto al cargar: rugosidad 0.050, metalness
+    0.000, envMapIntensity 0.000, opacidad 0.060, tinte #545454.
+    COSTO GPU: [**---] BAJO con CubeCamera estática.
+    Antes con MeshPhysicalMaterial (transmisión) era [*****]
+    MUY ALTO — se hacía un render extra por frame.
+
+  assets/fondo/fondo.json
+    Manifiesto de texto plano que lista los archivos de fondo
+    disponibles. Ejemplo: ["Campo.exr", "exterior.jpg"].
+    El programa lo lee al iniciar y muestra un botón por cada
+    archivo en la sección FONDO 360 del panel.
+    COSTO GPU: [-----] CERO — solo lectura de JSON al inicio.
+
+  assets/fondo/ (archivos de imagen panorámica)
+    Soporta .exr (vía EXRLoader), .jpg y .png (vía TextureLoader).
+    Al cambiar de fondo la textura anterior se libera de VRAM.
+    Si no existe fondo.json, intenta cargar assets/Campo.exr
+    como fallback.
+    COSTO GPU: [**---] BAJO — textura en VRAM, un sample por
+    fragmento de cielo por frame.
+
+  assets/fuentes/ (archivos .ttf o .otf)
+    Tipografías personales para el panel. Se cargan con la API
+    FontFace del navegador. Si el archivo no existe o el nombre
+    no coincide, el panel usa la fuente de respaldo configurada
+    en UI_CONFIG sin ningún error visible.
+    COSTO GPU: [-----] CERO — solo carga de fuente en RAM.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ESTRUCTURA INTERNA DE main.js
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  0. UI_CONFIG — BLOQUE DE CONFIGURACIÓN VISUAL
+     Bloque declarado al inicio del archivo, justo después de
+     los imports. Centraliza todos los valores visuales de la
+     interfaz. Para cambiar el aspecto del panel o la ventana
+     se modifica solo este bloque.
+
+     Parámetros disponibles:
+       BODY_BG              — color de fondo de la página
+       CROSSHAIR_SIZE       — tamaño del crosshair
+       CROSSHAIR_COLOR      — color de las líneas del crosshair
+       CROSSHAIR_THICKNESS  — grosor de las líneas
+       CROSSHAIR_BORDER_RADIUS — radio de las puntas
+       FUENTE_ARCHIVO       — nombre del archivo en assets/fuentes/
+       FUENTE_NOMBRE        — nombre interno de la fuente cargada
+       FUENTE_RESPALDO      — fuente si FUENTE_ARCHIVO no carga
+       PANEL_ANCHO          — ancho del panel abierto
+       PANEL_BG             — fondo del panel
+       PANEL_COLOR_TEXTO    — color del texto general
+       PANEL_BORDE_COLOR    — color del borde izquierdo
+       PANEL_BORDE_GROSOR   — grosor del borde
+       PANEL_PADDING        — padding interno
+       PANEL_FONT_SIZE      — tamaño de fuente del panel
+       PANEL_TRANSITION     — velocidad de animación apertura/cierre
+       TOGGLE_ANCHO         — ancho del botón lateral
+       TOGGLE_BG            — fondo del botón lateral
+       TOGGLE_COLOR         — color del texto del botón lateral
+       TOGGLE_BORDE_COLOR   — borde del toggle
+       TOGGLE_FONT_SIZE     — tamaño de fuente del toggle
+       TOGGLE_LETRA_ESPACIADO — espaciado entre letras
+       TOGGLE_OPACIDAD      — opacidad normal
+       TOGGLE_OPACIDAD_HOVER — opacidad al pasar el mouse
+       ACENTO               — color de acento principal (#00ff88)
+       ACENTO_INACTIVO      — color de elementos inactivos
+       ACENTO_TEXTO_LABEL   — color de etiquetas de sliders
+       SEC_MARGIN_TOP       — separación entre secciones
+       SEC_HEADER_BG        — fondo del header de sección
+       SEC_HEADER_BORDE     — borde del header
+       SEC_HEADER_BORDE_RADIO — radio del borde
+       SEC_HEADER_PADDING   — padding del header
+       SEC_HEADER_FONT_SIZE — tamaño de fuente del header
+       SEC_HEADER_FONT_WEIGHT — peso de fuente del header
+       SEC_HEADER_LETRA_ESP — espaciado entre letras del header
+       SEC_BODY_PADDING     — padding del contenido de sección
+       SLIDER_MARGIN_BOTTOM — espacio entre sliders
+       SLIDER_LABEL_MARGIN  — margen bajo la etiqueta del slider
+       SLIDER_VALOR_MIN_ANCHO — ancho mínimo del valor numérico
+       COLORPICKER_ANCHO    — ancho del input color
+       COLORPICKER_ALTO     — alto del input color
+       COLORPICKER_BORDE    — borde del input color
+       COLORPICKER_MARGIN   — margen inferior del color row
+       TOGBTN_FONT_SIZE     — tamaño de fuente del toggle button
+       TOGBTN_PADDING       — padding del toggle button
+       TOGBTN_MARGIN_BOTTOM — margen inferior del toggle button
+       TOGBTN_MARGIN_RIGHT  — margen derecho entre botones
+       TOGBTN_BG_ACTIVO     — fondo del toggle activo
+       BTN_ARCHIVO_PADDING  — padding de botones de archivo
+       BTN_ARCHIVO_MARGIN   — margen entre botones de archivo
+       BTN_ARCHIVO_FONT_SIZE — tamaño de fuente de botones
+
+     COSTO GPU: [-----] CERO — solo declaración de variables.
+
+  1. RENDERER
+     WebGLRenderer con antialias=true. pixelRatio fijo en 2.0.
+     ToneMapping tipo 1 (Reinhard). Exposición 2.250. Sombras
+     desactivadas. Espacio de color sRGB.
+     NOTA: antialias no tiene efecto porque EffectComposer
+     bypasea el framebuffer principal del renderer.
+
+     COSTO GPU: [***--] MEDIO (base inevitable por frame)
+
+     Desglose de parámetros:
+       pixelRatio=2.0: [*****] MUY ALTO — es el parámetro
+         individual de mayor impacto en toda la aplicación.
+         Renderiza a doble resolución, multiplicando x4 el
+         número de fragmentos procesados en TODOS los passes.
+         Bajar a 1.0 libera ~75% de la carga del fragment
+         shader instantáneamente.
+       ToneMapping / Exposición: [-----] CERO — multiplicador
+         matemático aplicado en OutputPass. Sin costo real.
+
+  2. ESCENA Y CÁMARA
+     Cámara perspectiva 72° FOV. near=0.1, far=400.
+     Jerarquía FPS: playerBody > yawObj > pitchObj > camera.
+
+     COSTO GPU: [*----] MÍNIMO
+
+     Desglose:
+       FOV 72°: un ángulo mayor muestra más geometría en
+         pantalla. Reducir a 60° disminuye los triángulos
+         visibles ligeramente.
+       far=400: la niebla cubre desde 240u, por lo que objetos
+         entre 240–400u se renderizan pero son invisibles.
+         Reducir far a 250 elimina ese trabajo innecesario.
+
+  3. SISTEMA DE FONDOS 360
+     Lee assets/fondo/fondo.json al iniciar y carga el primer
+     fondo de la lista. Soporta .exr, .jpg y .png. Al cambiar
+     de fondo la textura anterior se libera de VRAM. Si no
+     existe fondo.json, usa assets/Campo.exr como fallback.
+
+     COSTO GPU: [**---] BAJO
+     Costo fijo de VRAM por la textura activa. Un sample de
+     textura por fragmento de cielo visible por frame.
+     Botón "Sin fondo" libera la VRAM completamente.
+
+  4. POST-PROCESSING — PIPELINE
+     EffectComposer con 5 passes por frame:
+       RenderPass > SSAOPass > hBlurPass > vBlurPass > OutputPass
+
+     COSTO GPU TOTAL: [****-] ALTO
+
+     Desglose por pass:
+
+       RenderPass: [***--] MEDIO
+         Render principal. Costo proporcional al número de
+         triángulos visibles y al pixelRatio. Inevitable.
+
+       SSAOPass (kernelSize=64): [****-] ALTO
+         El pass más costoso del pipeline. Realiza 64 samples
+         por fragmento visible para calcular oclusión ambiental.
+         Reducir kernelSize de 64 a 32 baja el costo ~50%.
+         Desactivar SSAO es la mejora más grande del pipeline.
+         NOTA: Los parámetros del panel (kernelRadius,
+         minDistance, maxDistance) NO afectan el costo —
+         solo cambian el aspecto visual del efecto.
+
+       hBlurPass + vBlurPass: [**---] BAJO
+         Dos passes de blur de pantalla completa por frame.
+         A menor renderScale el blur aumenta automáticamente
+         pero el costo baja — relación inversa útil.
+         Desactivar libera dos passes completos por frame.
+
+       OutputPass: [*----] MÍNIMO
+         Conversión de color y tone mapping. Despreciable.
+
+  5. PARTÍCULAS DE POLVO
+     1500 partículas tipo Points con alphaMap circular generado
+     en un canvas 32x32 con gradiente radial. Las partículas
+     son circulares, no cuadradas.
+
+     COSTO GPU: [**---] BAJO
+
+     Desglose:
+       CPU por frame: bucle de 1500 iteraciones para actualizar
+         posiciones. Negligible en CPU moderna.
+       GPU por frame: 1500 puntos con alpha blending y alphaMap.
+         depthWrite=false y alphaTest=0.01 controlan el overdraw.
+       Reducir DUST_COUNT de 1500 a 500 baja el costo ~67%.
+       Tamaño grande (>0.2) en espacios cerrados acumula overdraw.
+
+  6. COLISIONES
+     16 raycasts horizontales por frame durante movimiento.
+
+     COSTO GPU: [-----] CERO (es costo de CPU)
+     COSTO CPU: [**---] BAJO
+     Reducir de 16 a 8 direcciones ayuda si hay stutters.
+
+  7. CARGA DEL MODELO GALERÍA
+     GLTFLoader carga GALERIA.glb con MeshLambertMaterial.
+     Material más barato de Three.js: solo diffuse, sin especular.
+
+     COSTO GPU EN RENDER: [***--] MEDIO
+     El costo real depende de la complejidad del GLB.
+
+  8. INPUT Y MOVIMIENTO
+     COSTO GPU: [-----] CERO — lógica de CPU pura.
+
+  9. POINTER LOCK
+     COSTO GPU: [-----] CERO — API del navegador.
+
+  10. FÍSICA
+      Gravedad y velocidad calculadas en CPU.
+      COSTO GPU: [-----] CERO — lógica de CPU pura.
+
+  11. LOOP DE ANIMACIÓN
+      requestAnimationFrame. Suma de todos los componentes.
+
+  12. RESIZE
+      Solo se ejecuta al cambiar el tamaño de ventana.
+      COSTO GPU: [-----] CERO durante el render normal.
+
+  13. LUCES
+      Cantidad variable según el LUCES.glb activo. Al cargar
+      se leen los nombres del GLB directamente y se aplican
+      valores fijos: intensidad 150, distancia 100, sin sombras.
+      No hay LIGHT_NAMES ni LIGHT_VALUES en el código.
+
+      COSTO GPU: [**---] BAJO sin sombras
+                 [*****] MUY ALTO con sombras
+
+      Una luz con sombra activa = render extra de toda la escena.
+      Con GPU integrada no activar más de 1–2 luces con sombra.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PANEL DE CONTROL — SECCIONES Y COSTO POR PARÁMETRO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Panel lateral derecho, colapsable. Todo el aspecto visual
+  está controlado por UI_CONFIG al inicio del archivo.
+
+  RENDERER
+    Exposición (0.1–4):     [-----] CERO — multiplicador puro.
+    ToneMapping (0–5):      [-----] CERO — operación en OutputPass.
+
+  FONDO 360
+    Botones de selección:   [**---] BAJO — carga una textura nueva
+      en VRAM y libera la anterior. Costo puntual, no por frame.
+    Sin fondo:              libera VRAM y elimina el skybox.
+    COSTO GPU POR FRAME: [**---] BAJO (un fondo activo) /
+                          [-----] CERO (sin fondo)
+
+  SOMBRAS
+    Tamaño Mapa (256–4096): [-----] CERO si sombras desactivadas.
+      Con sombras activas:
+        256px:  [**---] BAJO
+        1024px: [***--] MEDIO
+        2048px: [****-] ALTO
+        4096px: [*****] MUY ALTO
+    Opacidad (0–1):         [-----] CERO — uniform del shader.
+
+  NIEBLA
+    Near / Far:             [-----] CERO — cálculo matemático
+      simple en vertex shader. Sin costo medible.
+    Color Niebla:           [-----] CERO — uniform del shader.
+
+  EDGE BLUR
+    Toggle ON/OFF:          ON: [**---] BAJO / OFF: [-----] CERO
+    Intensidad (0–4):       [-----] CERO — solo un uniform.
+
+  SSAO
+    Kernel Radius:          [-----] CERO — solo el radio visual.
+    Min Distance:           [-----] CERO — umbral de descarte.
+    Max Distance:           [-----] CERO — umbral de descarte.
+    Color AO:               [-----] CERO — uniform de color.
+    IMPORTANTE: el costo real del SSAO viene del kernelSize=64
+    hardcodeado en el código, NO de estos controles del panel.
+
+  POLVO
+    Tamaño (0–0.5):         [*----] MÍNIMO a [**---] BAJO
+      Partículas grandes generan más overdraw.
+    Opacidad / Color:       [-----] CERO — uniforms del material.
+
+  PLAYER
+    Altura (0.5–16):        [-----] CERO — mueve el suelo virtual.
+    Display posición:       [-----] CERO — actualización de DOM.
+    GUARDAR COMO SPAWN:     [-----] CERO — guarda variables JS.
+
+  RENDIMIENTO — sección de mayor impacto del panel
+    Escala manual / Presets:
+      0.25 (Bajo 25%):      [*----] MÍNIMO
+      0.50 (Medio 50%):     [**---] BAJO
+      0.75 (Normal 75%):    [***--] MEDIO
+      1.00 (Alto 100%):     [***--] MEDIO-ALTO
+      1.50 (Ultra 150%):    [****-] ALTO
+      2.00 (pixelRatio):    [*****] MUY ALTO
+    La escala reduce el costo de TODOS los passes en cascada.
+
+  PRESENTACIÓN
+    Responsive:             restaura canvas a pantalla completa.
+    Canvas personalizado:   [**---] BAJO a [*----] MÍNIMO
+      Un canvas más pequeño reduce fragmentos en todos los passes.
+
+  LUCES INDIVIDUALES
+    Escala Global (0–5):    [-----] CERO — multiplica uniforms.
+    Intensidad / Color:     [-----] CERO — uniforms del shader.
+    Distancia:              [*----] MÍNIMO — acota el área de
+      influencia. distance=0 ilumina infinitamente (más costo).
+    Toggle ON/OFF por luz:  [*----] MÍNIMO — una luz menos.
+    Sombras ON/OFF por luz: [-----] CERO / [*****] MUY ALTO
+
+  BOTONES DE ARCHIVO
+    CARGAR LUCES.glb:       carga GLB nuevo, aplica valores fijos
+      (intensidad 150, distancia 100) y reconstruye el panel.
+      COSTO: puntual al cargar, cero después.
+    ELIMINAR LUCES:         elimina luces de escena.
+    CARGAR VIDRIOS.glb:     carga GLB, aplica valores por defecto,
+      genera CubeMap una sola vez.
+    ELIMINAR VIDRIOS:       elimina vidrios y libera VRAM.
+    COPIAR VALORES:         copia estado al portapapeles.
+      COSTO GPU: [-----] CERO.
+    GUARDAR ESCENA .galeria: serializa todo en JSON con LUCES.glb
+      y VIDRIOS.glb embebidos en base64.
+      COSTO GPU: [-----] CERO.
+    CARGAR ESCENA .galeria: restaura todos los parámetros,
+      posición/orientación del player, frame de presentación,
+      y GLBs embebidos. COSTO GPU: [-----] CERO.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SISTEMA DE VIDRIOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  MeshStandardMaterial + CubeCamera estática de 256px.
+  Carga automática al inicio si assets/VIDRIOS.glb existe.
+  La CubeCamera renderiza la escena una sola vez al cargar,
+  generando un envMap que refleja paredes, piso y luces reales.
+  Los vidrios se ocultan durante ese render para evitar
+  auto-reflejo. Después no hay costo adicional por frame.
+
+  Valores por defecto al cargar:
+    Rugosidad:        0.050
+    Metalness:        0.000
+    Intensidad Env:   0.000
+    Opacidad:         0.060
+    Tinte:            #545454 (R84 G84 B84)
+
+  COSTO GPU AL CARGAR: render único de 6 caras a 256px.
+  COSTO GPU POR FRAME: [**---] BAJO
+
+  Parámetros del panel:
+    Rugosidad / Metalness / Intensidad Env / Opacidad / Tinte:
+      [-----] CERO — todos son uniforms del shader.
+    Botón ACTUALIZAR REFLEJO: re-renderiza el cubeMap.
+      Útil si cambian las luces después de cargar los vidrios.
+      Costo único de 6 caras a 256px al presionar.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SISTEMA DE ESTADO / GUARDADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  _getState()
+    Lee y devuelve el estado completo de la escena. Incluye:
+    toneMapping, exposición, niebla, SSAO, polvo, player
+    (posición X/Y/Z actual + yaw/pitch de cámara), spawn,
+    sombras, edge blur, renderScale, frame de presentación,
+    fondo activo, vidrios (glassParams), y todas las luces
+    individuales con su estado completo.
+    COSTO GPU: [-----] CERO.
+
+  _syncControls(s)
+    Actualiza los elementos DOM del panel para que reflejen
+    visualmente los valores del estado cargado. Se llama al
+    final de _applyState(). Sincroniza sliders, color pickers,
+    toggles e inputs del frame de presentación.
+    COSTO GPU: [-----] CERO.
+
+  _applyState(s)
+    Aplica un estado completo a la escena. Restaura todos los
+    parámetros incluyendo posición y orientación del player,
+    frame de presentación, y GLBs embebidos. NO aplica
+    pixelRatio — ese valor es controlado exclusivamente por
+    _applyRenderScale() a través del slider de RENDIMIENTO.
+    COSTO GPU: [-----] CERO.
+
+  GUARDAR / CARGAR .galeria
+    Archivo JSON con el estado completo más LUCES.glb y
+    VIDRIOS.glb embebidos en base64. Permite restaurar una
+    escena completa sin depender de archivos externos excepto
+    GALERIA.glb, los fondos y las fuentes.
+    COSTO GPU: [-----] CERO.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RESUMEN: RANKING DE MAYOR A MENOR COSTO GPU
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. [*****]  pixelRatio 2.0 (hardcodeado en el código)
+              Multiplica x4 todos los fragmentos de todos los
+              passes. La reducción más impactante disponible.
+              Bajar a 1.0 libera ~75% de carga de fragmentos.
+
+  2. [****-]  SSAOPass con kernelSize=64 (hardcodeado)
+              64 samples por fragmento visible, cada frame.
+              Bajar a 32 reduce ~50% su costo.
+
+  3. [****-]  Luces con castShadow=true
+              Cada luz con sombra = render extra de la escena.
+              Actualmente todas en false. No activar en GPU integrada.
+
+  4. [***--]  RenderPass (geometría GALERIA.glb)
+              Costo base inevitable. Proporcional al modelo y pixelRatio.
+
+  5. [***--]  renderScale alto (>1.0) — actualmente ~1.70
+              Amplifica el costo de todos los passes.
+
+  6. [**---]  hBlurPass + vBlurPass (Edge Blur)
+              Dos passes de pantalla completa por frame.
+
+  7. [**---]  Fondo 360 activo en VRAM
+              Textura panorámica. Liberarla con "Sin fondo" ayuda.
+
+  8. [**---]  Vidrios (CubeCamera estática)
+              Costo bajo y fijo. Sin impacto dinámico por frame.
+
+  9. [**---]  Partículas de polvo (1500 puntos circulares)
+              Animación CPU + render GPU con alpha blending.
+
+  10. [*----]  Luces activas sin sombras
+               Cálculo Lambert acumulado por fragmento.
+               Manejable pero a monitorear con muchas luces.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ACCIONES RECOMENDADAS ANTES DE MIGRAR A PRODUCCIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ALTO IMPACTO:
+    · Bajar pixelRatio de 2.0 a 1.0 o máximo 1.5 en el código.
+    · Reducir kernelSize del SSAO de 64 a 32 (aprox. línea 150).
+    · Confirmar que ninguna luz tiene castShadow=true.
+
+  MEDIO IMPACTO:
+    · Usar renderScale entre 1.0 y 1.3 como valor por defecto.
+    · Asignar distancias acotadas a todas las luces con
+      distance=0 que no necesiten alcance infinito.
+
+  BAJO IMPACTO:
+    · Reducir DUST_COUNT de 1500 a 500–800 (aprox. línea 160).
+    · Reducir far de la cámara de 400 a 250 (aprox. línea 95).
+    · Desactivar Edge Blur si la escena se ve bien sin él.
+    · Usar fondos .jpg en lugar de .exr para menor VRAM.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  COSAS QUE EXISTEN EN EL CÓDIGO PERO NO HACEN NADA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. antialias: true en WebGLRenderer
+     No tiene efecto porque EffectComposer bypasea el
+     framebuffer principal. COSTO GPU: [-----] CERO.
+
+  2. _VDIRS (vectores arriba/abajo)
+     Declarado para detectar techo/rampas. Nunca se usa.
+     COSTO GPU: [-----] CERO — solo RAM, no VRAM.
+
+  3. _origAnimate = animate
+     Referencia guardada sin propósito. No se usa.
+     COSTO GPU: [-----] CERO.
+
+  4. const overlay
+     Referencia al div #overlay. Oculto en HTML con
+     display:none. Nunca se usa en JS.
+     COSTO GPU: [-----] CERO.
+
+  5. barFill, barLabel, startBtn
+     Referencias al overlay de carga. Funcionales pero
+     invisibles porque el overlay está oculto.
+     COSTO GPU: [-----] CERO.
+
+  6. renderer.shadowMap.type = PCFSoftShadowMap
+     Sin efecto porque shadowMap.enabled = false.
+     COSTO GPU: [-----] CERO.
+
+  7. materialsRoughness / materialsSpecular en _getState
+     Se serializan pero MeshLambertMaterial no tiene esas
+     propiedades. La sección MATERIALES fue eliminada del panel.
+     COSTO GPU: [-----] CERO.
+
+================================================================
