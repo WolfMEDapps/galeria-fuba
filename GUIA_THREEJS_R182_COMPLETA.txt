@@ -1,0 +1,429 @@
+================================================================================
+  GUÍA MAESTRA — THREE.JS r182 · GALLERY WEB · FPS VIEWER
+  Actualizada: Marzo 2026 — Sesión 4
+================================================================================
+
+ADVERTENCIA CRÍTICA — LEER ANTES DE CUALQUIER MODIFICACIÓN
+================================================================================
+
+⛔ REGLA ABSOLUTA #1 — NO HACER NADA QUE NO SE HAYA PEDIDO EXPLÍCITAMENTE
+  Tocar ÚNICAMENTE lo que el usuario pidió. Si hay duda, PREGUNTAR primero.
+  Nunca asumir, nunca "mejorar" nada por iniciativa propia.
+
+⛔ REGLA ABSOLUTA #2 — INVESTIGAR ANTES DE IMPLEMENTAR COSAS NUEVAS
+  Buscar en https://discourse.threejs.org y documentación oficial antes de
+  implementar cualquier feature. No adivinar. No improvisar.
+
+⛔ REGLA ABSOLUTA #3 — TRABAJAR SIEMPRE DESDE EL ARCHIVO QUE EL USUARIO SUBE
+  Siempre pedir que el usuario suba el archivo actual antes de modificar.
+  Nunca asumir que /outputs tiene la versión más reciente.
+
+⛔ REGLA ABSOLUTA #4 — NO TOCAR LO QUE FUNCIONA
+  Si el usuario reporta que algo funciona, esa parte es INTOCABLE a menos
+  que el usuario pida explícitamente modificarla.
+
+================================================================================
+ESTADO ACTUAL DEL PROYECTO — GALLERY WEB (Marzo 2026, Sesión 4)
+================================================================================
+
+ARCHIVOS:
+  ├── index.html              ✅ Funciona — overlay hidden, importmap, canvas
+  ├── main.js                 ✅ Funciona — estado detallado abajo (773 líneas)
+  ├── assets/GALERIA.glb      ✅ Edificio bakeado (200×200×17u, 2 meshes) ~195MB
+  ├── assets/LUCES.glb        ✅ 22 luces calibradas (SpotLight + PointLight) ~7KB
+  └── assets/Campo.exr        ✅ HDRI — solo fondo visual, NO ilumina
+
+ESTADO DE main.js (Sesión 4):
+  ✅ Renderer: LinearToneMapping, shadowMap.enabled=true, PCFSoftShadowMap
+  ✅ pixelRatio: 1.7
+  ✅ Cámara FPS: FLOOR_Y=6.1, SPEED=10, GRAVITY=-18
+  ✅ HDRI: solo scene.background — sin scene.environment
+  ✅ Sin luz ambiente — solo las luces del GLB iluminan la escena
+  ✅ SSAO: kernelRadius=8.58, minDistance=0.006, maxDistance=0.030
+  ✅ ssaoPass.normalMaterial.side = THREE.DoubleSide (fix halos en bordes)
+  ✅ Materiales: MeshLambertMaterial, DoubleSide
+  ✅ Polvo: 1500 partículas, size=0.026, opacity=0.020, color=#fff5e0
+  ✅ Colisiones: 240 AABB + suelo + 4 muros exteriores
+  ✅ 22 luces cargadas via _loadLucesGLB() con valores calibrados + castShadow
+  ✅ Sombras activas: idx 1, 10, 12, 14, 16, 18, 19 (ver tabla abajo)
+  ✅ Variable global _shadowMapSize=2048 — controla mapSize de todas las sombras
+  ✅ Panel colapsable (pestaña lateral ▶/◀ AJUSTES)
+  ✅ Secciones del panel colapsables individualmente (▾ por categoría)
+  ✅ Luces individuales colapsables dentro de LUCES INDIVIDUALES
+  ✅ Controles de COLOR para: niebla, SSAO tint, partículas de polvo
+  ✅ Botón CARGAR LUCES.glb — carga nuevo GLB y guarda buffer para .galeria
+  ✅ Botón ELIMINAR LUCES — remueve luces de escena y limpia panel
+  ✅ Botón COPIAR VALORES — copia TODO al portapapeles (ver formato abajo)
+  ✅ Botón GUARDAR ESCENA .galeria — descarga JSON completo + LUCES.glb embebido
+  ✅ Botón CARGAR ESCENA .galeria — restaura toda la escena desde archivo
+
+================================================================================
+VALORES CALIBRADOS ACTUALES (Sesión 4)
+================================================================================
+
+  renderer.toneMappingExposure = 2.200
+  renderer.toneMapping         = 1 (LinearToneMapping)
+  renderer.shadowMap.enabled   = true
+  renderer.setPixelRatio(1.7)
+  scene.fog = new THREE.Fog(0x1a1a1a, 100.0, 240.0)
+  let FLOOR_Y       = 6.1
+  _shadowMapSize    = 2048
+  ssaoPass.kernelRadius = 8.58
+  ssaoPass.minDistance  = 0.0060
+  ssaoPass.maxDistance  = 0.0300
+  dustMat.size      = 0.0260
+  dustMat.opacity   = 0.020
+  dustMat.color     = #fff5e0
+
+LUCES CALIBRADAS ACTUALES (orden traverse GLB — 22 luces):
+  idx 0  Luz_Cuadros_01:    intensity=114.10000, color=#d1c2c2, distance=120.0, castShadow=false
+  idx 1  Luz_Cuadros_02:    intensity=70.20000,  color=#ffcccc, distance=120.0, castShadow=true
+  idx 2  Luz_Cuadros_03:    intensity=56.50000,  color=#ffbdbd, distance=85.0,  castShadow=false
+  idx 3  Luz_Entrada:       intensity=79.30000,  color=#ff0000, distance=88.0,  castShadow=false
+  idx 4  Luz_Guillotina_01: intensity=23.60000,  color=#ffffff, distance=90.0,  castShadow=false
+  idx 5  Luz_Guillotina_02: intensity=48.20000,  color=#ffffff, distance=130.0, castShadow=false
+  idx 6  Luz_Guillotina_03: intensity=83.00000,  color=#ffffff, distance=130.0, castShadow=false
+  idx 7  Luz_Guillotina_04: intensity=66.50000,  color=#ffffff, distance=130.0, castShadow=false
+  idx 8  Luz_Hombre_Pared:  intensity=52.80000,  color=#ffffff, distance=130.0, castShadow=false
+  idx 9  Luz_Mujer_02:      intensity=23.60000,  color=#ffffff, distance=97.0,  castShadow=false
+  idx 10 Luz_Patio_01:      intensity=98.60000,  color=#ffffff, distance=0.0,   castShadow=true
+  idx 11 Luz_Patio_02:      intensity=74.00800,  color=#ffffff, distance=0.0,   castShadow=false
+  idx 12 Luz_Quebrada_02:   intensity=165.30000, color=#ffffff, distance=128.0, castShadow=true
+  idx 13 Luz_Quebrada_03:   intensity=57.07200,  color=#ffffff, distance=91.0,  castShadow=false
+  idx 14 Luz_Vacia_Blanca:  intensity=138.73600, color=#ffffff, distance=93.0,  castShadow=true
+  idx 15 Luz_Vacia_Roja:    intensity=43.26800,  color=#ffd1d1, distance=127.0, castShadow=false
+  idx 16 Luz_Mamut_01:      intensity=95.23600,  color=#ffffff, distance=79.0,  castShadow=true
+  idx 17 Luz_Mamut_03:      intensity=81.43200,  color=#fcffe5, distance=93.0,  castShadow=false
+  idx 18 Luz_Mamut_02:      intensity=60.20400,  color=#ffffff, distance=148.0, castShadow=true
+  idx 19 Luz_Mujer_01:      intensity=98.36800,  color=#ffffff, distance=68.0,  castShadow=true
+  idx 20 Luz_Quebrada_01:   intensity=25.17200,  color=#ffffff, distance=0.0,   castShadow=false
+  idx 21 (sin nombre):      intensity=41.06400,  color=#ffffff, distance=0.0,   castShadow=false
+
+================================================================================
+CAMBIOS REALIZADOS EN SESIÓN 4
+================================================================================
+
+CAMBIO 1 — PANEL COLAPSABLE (toggle lateral)
+  - El panel completo ahora tiene una pestaña vertical en el borde izquierdo
+  - Texto "▶ AJUSTES" cuando está abierto, "◀ AJUSTES" cuando cerrado
+  - Transición CSS suave (width + opacity + padding)
+  - Estructura: panelWrap (flex) → panelToggle (18px) + panel (280px)
+  - panelWrap tiene pointer-events:none para no bloquear el canvas
+  - panelToggle y panel tienen pointer-events:all individualmente
+
+CAMBIO 2 — SECCIONES COLAPSABLES DENTRO DEL PANEL
+  - La función sec(t) fue reescrita: ahora devuelve un wrapper con header
+    clickeable y body colapsable (▾/▸)
+  - Override de panel.appendChild: detecta si el elemento tiene ._secBody
+    para saber si es un sec() → actualiza _currentSecBody
+  - Sliders appendeados después de un sec() van automáticamente al body
+    de esa sección via el override
+  - _currentSecBody=null para romper la redirección cuando es necesario
+  - lightsSection, lucesControls, btnGuardar, btnCargar, btn (COPIAR)
+    se agregan con _origPanelAppend() para ir directo al panel
+
+CAMBIO 3 — LUCES INDIVIDUALES COLAPSABLES
+  - buildLightsPanel() reescrita: cada luz tiene su propio header colapsable
+  - Por defecto las luces individuales están CERRADAS (display:none)
+  - El header muestra el nombre de la luz con ▾
+  - Los controles (sliders, colorRow, togBtn) están dentro del luzBody
+
+CAMBIO 4 — CONTROLES DE COLOR NUEVOS
+  - Niebla: colorRow('Color Niebla','#1a1a1a', v=>scene.fog.color.set(v))
+  - SSAO:   colorRow('Color AO','#000000', v=>ssaoPass.ssaoMaterial...)
+            NOTA: el uniform 'aoColor' puede no estar disponible en r182
+            → verificar en consola si funciona, no es crítico
+  - Polvo:  colorRow('Color Polvo','#fff5e0', v=>dustMat.color.set(v))
+
+CAMBIO 5 — VARIABLE GLOBAL _shadowMapSize
+  - let _shadowMapSize = 2048 declarada globalmente
+  - El slider "Tamaño Mapa" actualiza _shadowMapSize además de los mapSizes
+  - El togBtn de sombras por luz usa _shadowMapSize en lugar de hardcodear 2048
+  - Al cargar LUCES.glb con useDefaults=true, aplica _shadowMapSize a sombras
+  - _getState() guarda shadowMapSize global Y shadowMapSize individual por luz
+
+CAMBIO 6 — castShadow DESDE EL ARRAY LIGHT_VALUES
+  - LIGHT_VALUES ahora tiene 4 valores por luz: [intensity, color, distance, castShadow]
+  - _loadLucesGLB() lee el 4to valor y aplica castShadow + shadow config completa
+  - Se eliminó el blanket obj.castShadow=false que sobreescribía todo
+  - El togBtn de sombras en buildLightsPanel() ahora se inicializa con
+    light.castShadow (el valor real) en lugar de false hardcodeado
+
+CAMBIO 7 — COPIAR VALORES COMPLETO
+  Ahora incluye TODOS los parámetros:
+    renderer.setPixelRatio(X)
+    renderer.shadowMap.enabled = X
+    renderer.toneMapping = X
+    renderer.toneMappingExposure = X
+    scene.fog = new THREE.Fog(COLOR, near, far)   ← incluye color de niebla
+    let FLOOR_Y = X
+    _shadowMapSize = X                             ← NUEVO
+    ssaoPass.kernelRadius = X
+    ssaoPass.minDistance = X
+    ssaoPass.maxDistance = X
+    dustMat.size = X
+    dustMat.opacity = X
+    dustMat.color = #XXXXXX                        ← NUEVO
+    // LUCES (por luz):
+    // Nombre: intensity=X, color=#X, distance=X, castShadow=X, shadowMapSize=X  ← NUEVO
+
+CAMBIO 8 — SISTEMA .galeria (REEMPLAZA localStorage)
+  FORMATO: JSON con extensión .galeria que contiene:
+    - Todos los parámetros de _getState() (versión completa)
+    - _lucesGLB: string base64 del LUCES.glb activo (~9KB embebido)
+    - NO incluye GALERIA.glb (195MB — siempre en assets/)
+
+  GUARDAR (💾 GUARDAR ESCENA .galeria):
+    1. Llama _getState() para capturar todos los valores
+    2. Lee _lucesGLBBuffer (ArrayBuffer) → convierte a base64
+    3. Embebe en state._lucesGLB
+    4. Descarga como 'escena.galeria' via Blob + createObjectURL
+
+  CARGAR (📂 CARGAR ESCENA .galeria):
+    1. Lee el archivo con FileReader.text()
+    2. JSON.parse() → valida
+    3. Si tiene _lucesGLB: decodifica base64 → ArrayBuffer → Blob URL
+       → _loadLucesGLB(url, false) → buildLightsPanel() → _applyState()
+       → buildLightsPanel() de nuevo para reflejar los valores aplicados
+    4. Si no tiene _lucesGLB: solo _applyState()
+
+  _lucesGLBBuffer:
+    - Se llena al inicio via fetch('./assets/LUCES.glb').arrayBuffer()
+    - Se actualiza cuando el usuario carga un nuevo LUCES.glb desde archivo
+    - Permite guardar cualquier versión de luces, no solo la default
+
+  _applyState(s):
+    Función nueva que aplica un objeto de estado completo a la escena:
+    - renderer: pixelRatio, toneMapping, exposure
+    - fog: near, far, color
+    - ssao: kernelRadius, minDistance, maxDistance
+    - dust: size, opacity, color
+    - player: floorY
+    - shadowMapSize global
+    - luces: intensity, color, distance, castShadow, shadowMapSize individual
+    - Actualiza renderer.shadowMap.enabled según si hay luces con castShadow
+    - Llama sceneMaterials.forEach(m=>m.needsUpdate=true)
+
+================================================================================
+ERRORES COMETIDOS EN SESIONES ANTERIORES Y SUS SOLUCIONES
+================================================================================
+
+ERROR 1 — Tocar cosas no pedidas
+  Solución: Tocar ÚNICAMENTE lo que se pide.
+
+ERROR 2 — MeshPhysicalMaterial → MeshLambertMaterial sin permiso
+  Solución: Nunca cambiar tipo de material sin permiso explícito.
+
+ERROR 3 — Quitar secciones del panel sin permiso
+  Solución: Nunca eliminar controles del panel sin pedido explícito.
+
+ERROR 4 — LIGHT_NAMES en orden incorrecto
+  Solución: Extraer orden real del GLB con pygltflib antes de hardcodear.
+  El orden correcto es el que devuelve traverse() al recorrer los nodos.
+
+ERROR 5 — ssaoPass.normalMaterial.side no configurado
+  Causaba halos blancos en bordes de meshes DoubleSide.
+  Solución: ssaoPass.normalMaterial.side = THREE.DoubleSide
+
+ERROR 6 — shadowMap.type no se puede cambiar en runtime
+  Solución: Slider de calidad controla shadow.mapSize via _shadowMapSize,
+  no shadowMap.type.
+
+ERROR 7 — sceneMeshes.forEach fuera del callback de GALERIA.glb
+  Solución: SIEMPRE dentro del callback onLoad, después del traverse.
+
+ERROR 8 — castShadow sin configuración completa
+  Solución: Siempre incluir mapSize, bias y normalBias:
+    light.shadow.mapSize.set(_shadowMapSize, _shadowMapSize);
+    light.shadow.bias=-0.0003;
+    light.shadow.normalBias=0.02;
+
+ERROR 9 — Sistema de descarga de main.js con fetch + regex
+  RESUELTO en Sesión 4: ya no se intenta modificar main.js en runtime.
+  El flujo correcto para persistir valores de código es:
+    1. Usuario ajusta panel → presiona COPIAR VALORES
+    2. Pega los valores a Claude junto con el main.js actual
+    3. Claude aplica los cambios al archivo subido por el usuario
+  Para persistir el estado visual completo sin Claude:
+    → Usar GUARDAR ESCENA .galeria / CARGAR ESCENA .galeria
+
+ERROR 10 — Trabajar desde versiones desactualizadas del archivo
+  Solución: SIEMPRE trabajar desde el archivo que el usuario sube.
+
+ERROR 11 (Sesión 4) — obj.castShadow = false blanket después del traverse
+  Causaba que los castShadow aplicados desde LIGHT_VALUES[idx][3] fueran
+  inmediatamente sobreescritos a false.
+  Solución: Eliminar esa línea. Cada rama (useDefaults / !useDefaults)
+  maneja castShadow de forma independiente.
+
+ERROR 12 (Sesión 4) — shadowMapSize hardcodeado a 2048 en togBtn
+  Causaba que el slider "Tamaño Mapa" no tuviera efecto real al activar
+  sombras desde el panel.
+  Solución: Usar _shadowMapSize global en lugar de literal 2048.
+
+================================================================================
+REGLA MAESTRA — APLICAR VALORES DEL COPIAR AL CÓDIGO
+================================================================================
+
+Cuando el usuario pega los valores del COPIAR:
+
+1. Pedir que suba el archivo actual como base (REGLA ABSOLUTA #3)
+2. Cambios simples (pixelRatio, exposure, fog, SSAO, dust, FLOOR_Y,
+   shadowMapSize, colores):
+   → str_replace sobre la línea exacta
+3. Cambios de luces (intensity, color, distance, castShadow):
+   → str_replace sobre el bloque LIGHT_VALUES completo
+4. _shadowMapSize inicial:
+   → str_replace sobre: let _shadowMapSize = XXXX;
+5. shadowMap.enabled=true:
+   → Cambiar línea del renderer (ya está en true por defecto en Sesión 4)
+
+================================================================================
+DETALLES TÉCNICOS — GALLERY WEB
+================================================================================
+
+GALERIA.glb:
+  - 2 meshes: PISO + PAREDES con texturas bakeadas
+  - Normales hacia afuera → usar DoubleSide (NUNCA cambiar a FrontSide)
+  - BBox: X[-100→100], Y[0→17], Z[-100→100]
+  - 1u Blender = 1u Three.js (sin reescala al cargar)
+  - ~195MB — NO se embebe en .galeria
+
+LUCES.glb:
+  - 22 nodos → Three.js pierde los nombres de nodo al cargar
+  - Solución: array LIGHT_NAMES hardcodeado en el mismo orden del GLB
+  - Carga via _loadLucesGLB(url, onDone, useDefaults) — soporta recarga
+  - ~7KB — SÍ se embebe en .galeria (base64 ~9KB)
+  - Exportar desde Blender: ✅ Selected Objects ✅ Punctual Lights ❌ Geometry
+  - useDefaults=true  → usa LIGHT_VALUES + LIGHT_NAMES hardcodeados
+  - useDefaults=false → lee nombre y escala intensidad (* 0.00005) del GLB
+
+CARGA DE LUCES EN RUNTIME:
+  _loadLucesGLB(url, onDone, useDefaults=true):
+    - Elimina gltf.scene anterior si existe (_lucesGltfScene)
+    - Limpia sceneLights[]
+    - Traversea nuevas luces
+    - useDefaults=true: aplica LIGHT_VALUES[idx] → intensity, color,
+      distance, castShadow + shadow config completa si castShadow=true
+    - useDefaults=false: escala intensidad raw * 0.00005, lee nombre del nodo
+    - Llama onDone() para reconstruir panel
+  Botón CARGAR LUCES.glb:
+    - file picker → file.arrayBuffer() → guarda en _lucesGLBBuffer
+    - createObjectURL → _loadLucesGLB(url, cb, false)
+  Botón ELIMINAR LUCES:
+    - scene.remove(_lucesGltfScene) + limpiar panel + shadowMap.enabled=false
+
+PANEL — ESTRUCTURA (Sesión 4):
+  panelWrap (position:fixed, flex, pointer-events:none)
+    ├── panelToggle (18px, writing-mode:vertical-rl, pointer-events:all)
+    └── panel (280px, overflow-y:auto, pointer-events:all, transition)
+
+  Funciones de construcción:
+    slider(label, min, max, value, step, onChange)
+    sec(title) → devuelve wrap con ._secBody, activa _currentSecBody
+    colorRow(label, hex, onChange)
+    togBtn(labelOn, labelOff, initOn, onChange)
+    _origPanelAppend(el) → bypass del override, va directo al panel
+
+  Override de panel.appendChild:
+    - Si el elemento tiene ._secBody → va al panel directo, activa _currentSecBody
+    - Si no tiene ._secBody y hay _currentSecBody activo → va al body del sec
+    - Si no hay _currentSecBody → va al panel directo
+
+PANEL — SECCIONES EN ORDEN:
+  RENDERER:  Exposición, ToneMapping, Pixel Ratio
+  SOMBRAS:   Tamaño Mapa (256-4096), Opacidad
+  NIEBLA:    Near, Far, Color Niebla
+  SSAO:      Kernel Radius, Min Distance, Max Distance, Color AO
+  MATERIALES: Roughness, Specular
+  POLVO:     Tamaño, Opacidad, Color Polvo
+  PLAYER:    Altura
+  [lightsSection — div directo al panel]
+    LUCES INDIVIDUALES (sec colapsable):
+      Escala Global
+      [por luz — colapsable, cerrado por defecto]:
+        Intensidad, Distancia, Color, ● ON/○ OFF, 🔲 Sombras ON/OFF
+  [lucesControls — div directo al panel]:
+    📂 CARGAR LUCES.glb
+    🗑 ELIMINAR LUCES
+  📋 COPIAR VALORES    ← _origPanelAppend
+  💾 GUARDAR ESCENA .galeria  ← _origPanelAppend
+  📂 CARGAR ESCENA .galeria   ← _origPanelAppend
+
+COLISIONES:
+  - 240 AABB extraídos con Python (pygltflib+numpy)
+  - Hardcodeados como RAW_BOXES en main.js (línea 115)
+  - Algoritmo: esfera radio=0.4 vs AABB
+  - FLOOR_Y controla altura del jugador en 3 lugares que deben coincidir:
+    playerBody.position.set(0, FLOOR_Y, 0)   // spawn (línea 52)
+    if (pos.y < FLOOR_Y) { pos.y = FLOOR_Y; } // resolveCollisions()
+    playerBody.position.set(0, FLOOR_Y, 0)   // tecla R respawn
+
+FORMATO ARCHIVO .galeria:
+  {
+    "version": 1,
+    "pixelRatio": 1.7,
+    "toneMapping": 1,
+    "exposure": 2.2,
+    "fogNear": 100,
+    "fogFar": 240,
+    "fogColor": "#1a1a1a",
+    "ssaoKR": 8.58,
+    "ssaoMin": 0.006,
+    "ssaoMax": 0.03,
+    "dustSize": 0.026,
+    "dustOpacity": 0.02,
+    "dustColor": "#fff5e0",
+    "floorY": 6.1,
+    "shadowMapSize": 2048,
+    "shadowEnabled": true,
+    "lights": [
+      {
+        "name": "Luz_Cuadros_01",
+        "intensity": 114.1,
+        "color": "#d1c2c2",
+        "distance": 120,
+        "castShadow": false,
+        "shadowMapSize": 2048
+      },
+      ...
+    ],
+    "_lucesGLB": "base64string..."  ← LUCES.glb embebido (~9KB)
+  }
+
+================================================================================
+ERRORES COMUNES
+================================================================================
+
+  SÍNTOMA                        CAUSA / SOLUCIÓN
+  ───────────────────────────────────────────────────────────────────────────
+  Halos blancos en bordes mesh   ssaoPass.normalMaterial.side no es DoubleSide
+                                 → agregar: ssaoPass.normalMaterial.side = THREE.DoubleSide
+
+  Sombras con artefactos         bias/normalBias insuficientes
+                                 → shadow.bias=-0.0003, normalBias=0.02
+
+  Luces sin nombre (Scene/Spot)  Three.js pierde nombres de nodos del GLB
+                                 → usar array LIGHT_NAMES hardcodeado
+
+  Panel no muestra luces         buildLightsPanel() llamado antes de que
+                                 LUCES.glb termine de cargar → siempre
+                                 llamar dentro del callback onLoad
+
+  Escena sobreexpuesta           scene.environment activo con luces puntuales
+                                 → usar solo scene.background
+
+  sceneMeshes vacío al cargar    forEach ejecutado fuera del callback GLTFLoader
+                                 → mover dentro del onLoad de GALERIA.glb
+
+  castShadow ignorado al cargar  obj.castShadow=false blanket después del traverse
+                                 → eliminado en Sesión 4, no reintroducir
+
+  Slider Tamaño Mapa sin efecto  togBtn de sombras usa 2048 hardcodeado
+                                 → usar _shadowMapSize global
+
+  .galeria no carga luces        _lucesGLBBuffer es null al guardar
+                                 → el fetch inicial de LUCES.glb puede no
+                                   haber terminado — esperar o cargar manual
+
+================================================================================
