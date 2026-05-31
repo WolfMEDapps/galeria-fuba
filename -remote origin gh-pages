@@ -9,8 +9,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: true
-      - name: Download LFS files
-        run: git lfs pull
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
